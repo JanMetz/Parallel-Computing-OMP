@@ -15,7 +15,7 @@ public:
 private:
     static bool isPrime_div(const int number);
     std::vector<std::vector<int>> getRanges() const;
-    void combinePrimesLists(const std::vector<std::vector<bool>> &threadsPrimesLists, std::vector<bool> &isPrime) const;
+    std::vector<int> combinePrimesLists(const std::vector<std::vector<bool>>& threadsPrimesLists, const int add) const;
     void removeMultiples(const int prime, std::vector<bool> &isPrime, const int sub) const;
     void fillPrimesList(const std::vector<bool> &isPrime, std::vector<int> &primes, const int add) const;
 
