@@ -24,6 +24,8 @@ void ErastotenesSieve::printPrimes(const std::vector<int> &primes)
             std::cout << std::endl;
         ++i;
     }
+
+    std::cout << std::endl;
 }
 
 std::vector<int> ErastotenesSieve::findPrimesSequential_add(const int max)  const
@@ -121,17 +123,11 @@ std::vector<int> ErastotenesSieve::findPrimesDiv() const
     for (auto &row : isPrimeMulti)
         row = std::vector<bool>(mMaxNum - mMinNum + 1, true);
 
-    #pragma omp parallel for schedule(guided) shared(isPrimeMulti)
-    for (int num = mMinNum; (num - mMinNum) < isPrimeMulti[omp_get_thread_num()].size(); ++num)
+    #pragma omp parallel for shared(isPrimeMulti)
+    for (int num = mMinNum; num < mMaxNum + 1; ++num)
         isPrimeMulti[omp_get_thread_num()][num - mMinNum] = ErastotenesSieve::isPrime_div(num);
 
-    std::vector<bool> isPrime;
-    combinePrimesLists(isPrimeMulti, isPrime);
-
-    std::vector<int> primes;
-    fillPrimesList(isPrime, primes, mMinNum);
-
-    return primes;
+    return combinePrimesLists(isPrimeMulti, mMinNum);
 }
 
 std::vector<std::vector<int>> ErastotenesSieve::getRanges() const
@@ -161,13 +157,20 @@ std::vector<int> ErastotenesSieve::findPrimesFunctional() const
 
     #pragma omp parallel for schedule(guided) firstprivate(startingPrimes) shared(isPrimeMulti)
     for (int i = 0; i < startingPrimes.size(); ++i)
-        removeMultiples(startingPrimes[i], isPrimeMulti[omp_get_thread_num()], mMinNum);
-
-    std::vector<bool> isPrime;
-    combinePrimesLists(isPrimeMulti, isPrime);
+    {
+        const int prime = startingPrimes[i];
+        const int threadID = omp_get_thread_num();
+        for (int multiple = prime; multiple - mMinNum < isPrimeMulti[threadID].size(); multiple += prime)
+            isPrimeMulti[threadID][multiple - mMinNum] = false;
+    }
 
     std::vector<int> primes;
-    fillPrimesList(isPrime, primes, mMinNum);
+    for (const auto& prime : startingPrimes)
+        if (prime >= mMinNum)
+            primes.emplace_back(prime);
+
+    const auto combined = combinePrimesLists(isPrimeMulti, mMinNum);
+    primes.insert(primes.end(), combined.begin(), combined.end());
 
     return primes;
 }
@@ -187,19 +190,30 @@ void ErastotenesSieve::removeMultiples(const int prime, std::vector<bool> &isPri
         isPrime[multiple - sub] = false;
 }
 
-void ErastotenesSieve::combinePrimesLists(const std::vector<std::vector<bool>> &threadsPrimesLists, std::vector<bool> &isPrime) const
+std::vector<int> ErastotenesSieve::combinePrimesLists(const std::vector<std::vector<bool>> &threadsPrimesLists, const int add) const
 {
-    int i = 0;
-    #pragma omp parallel for schedule(guided) shared(isPrime) firstprivate(mThreadsNum, range1, threadsPrimesList)
-    for (; i < threadsPrimesLists[0].size(); ++i)
+    std::vector<std::vector<int>> primesMulti(mThreadsNum);
+
+    #pragma omp parallel for schedule(guided) shared(primesMulti) firstprivate(mThreadsNum, threadsPrimesLists, add)
+    for (int i = 0; i < threadsPrimesLists[0].size(); ++i)
     {
         bool combined = true;
         for (int j = 0; j < mThreadsNum; ++j)
             combined *= threadsPrimesLists[j][i];
 
-        isPrime.emplace_back(combined);
+        if (combined)
+            primesMulti[omp_get_thread_num()].emplace_back(combined + add);
     }
     
-    for (; i < threadsPrimesLists.back().size(); ++i)
-        isPrime.emplace_back(threadsPrimesLists.back()[i]);
+    for (int i = threadsPrimesLists[0].size(); i < threadsPrimesLists.back().size(); ++i)
+    {
+        if (threadsPrimesLists.back()[i])
+            primesMulti[0].emplace_back(threadsPrimesLists.back()[i] + add);
+    }
+
+    std::vector<int> primes;
+    for (int i = 0; i < mThreadsNum; ++i)
+        primes.insert(primes.end(), primesMulti[i].begin(), primesMulti[i].end());
+
+    return primes;
 }
